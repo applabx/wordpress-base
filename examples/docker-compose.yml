@@ -1,0 +1,110 @@
+# ============================================================
+# AppLabX WordPress Base — Local Development Stack
+# ============================================================
+# Spin up a complete WordPress + MySQL + Redis environment
+# on your local machine using this base image.
+#
+# Usage:
+#   cp .env.example .env     # edit with your values
+#   docker compose up -d
+#   open http://localhost:8080
+# ============================================================
+
+services:
+  # ── WordPress ─────────────────────────────────────────────
+  wordpress:
+    # Build from the local Dockerfile (for testing base image changes)
+    # In production, use:
+    #   image: ghcr.io/applabx/wordpress-base:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: applabx-wordpress-base
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      # Database
+      WORDPRESS_DB_HOST: mysql
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: "${WORDPRESS_DB_PASSWORD}"
+      WORDPRESS_TABLE_PREFIX: "${WORDPRESS_TABLE_PREFIX:-wp_}"
+      # PHP tuning
+      PHP_UPLOAD_MAX_FILESIZE: 256M
+      PHP_POST_MAX_SIZE: 256M
+      # Optional: enable debug (don't use in production)
+      WORDPRESS_DEBUG: "${WORDPRESS_DEBUG:-0}"
+    volumes:
+      # Persistent WordPress data (themes, plugins, uploads)
+      - wordpress_data:/var/www/html
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  # ── MySQL 8 ───────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: applabx-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD}"
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: "${WORDPRESS_DB_PASSWORD}"
+    volumes:
+      # Persistent database files
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── Redis ─────────────────────────────────────────────────
+  # Used for WordPress object cache (via redis-cache plugin)
+  # and optional PHP session storage.
+  redis:
+    image: redis:7-alpine
+    container_name: applabx-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── phpMyAdmin (optional) ─────────────────────────────────
+  # Uncomment to get a web UI for the database.
+  # Access at http://localhost:8081
+  # phpmyadmin:
+  #   image: phpmyadmin:latest
+  #   container_name: applabx-phpmyadmin
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8081:80"
+  #   environment:
+  #     PMA_HOST: mysql
+  #     PMA_USER: root
+  #     PMA_PASSWORD: "${MYSQL_ROOT_PASSWORD}"
+  #   depends_on:
+  #     mysql:
+  #       condition: service_healthy
+
+# ── Named volumes ────────────────────────────────────────────
+# These persist across `docker compose down`. To wipe all data:
+#   docker compose down -v
+volumes:
+  wordpress_data:
+  mysql_data:
+  redis_data:

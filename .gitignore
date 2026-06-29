@@ -1,0 +1,63 @@
+# ── OS ─────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.AppleDouble
+.LSOverride
+
+# ── Build artifacts ─────────────────────────────────────────
+*.tar
+*.tar.gz
+*.zip
+!.github/workflows/docker-publish.yml
+
+# ── Docker ─────────────────────────────────────────────────
+.docker/
+
+# ── PHP / Composer ─────────────────────────────────────────
+vendor/
+composer.phar
+composer.lock
+.phpunit.result.cache
+phpunit.xml
+.phpunit.cache/
+
+# ── IDE ───────────────────────────────────────────────────
+.idea/
+*.iml
+.vscode/
+*.sublime-*
+
+# ── Credentials & secrets ──────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+credentials.json
+secrets.json
+
+# ── Local overrides (examples) ────────────────────────────
+# Allow mounting overrides without committing them
+# overrides/
+# overrides.sh
+
+# ── Documentation build ────────────────────────────────────
+_site/
+.sass-cache/
+*.log
+
+# ── Git ────────────────────────────────────────────────────
+# Keep the workflow files; ignore everything else in .github
+.github/*.yml
+!.github/workflows/
+
+# ── Misc ───────────────────────────────────────────────────
+*.bak
+*.tmp
+*.temp
+README.local.md
+CHANGELOG.local.md

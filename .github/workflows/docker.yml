@@ -1,0 +1,199 @@
+name: Build & Publish Docker Image
+
+# ── Triggers ────────────────────────────────────────────────
+on:
+  # Build on every push to main (for CI validation)
+  push:
+    branches: [main]
+
+  # Build on every push tag (release)
+  push:
+    tags:
+      - 'v*'
+
+  # Pull request builds (validate without pushing)
+  pull_request:
+    branches: [main]
+
+  # Manual trigger via GitHub Actions UI
+  workflow_dispatch:
+
+# ── Permissions ─────────────────────────────────────────────
+permissions:
+  contents: read
+  packages: write
+
+# ── Concurrency ──────────────────────────────────────────────
+# Cancel in-progress runs for the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ── Jobs ─────────────────────────────────────────────────────
+jobs:
+  # ── Job 1: Validate ────────────────────────────────────────
+  validate:
+    name: Validate Dockerfile syntax
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Docker run
+        run: |
+          # Ensure docker is available
+          if ! command -v docker &>/dev/null; then
+            echo "Docker not installed — skipping build step on this runner"
+            exit 0
+          fi
+          echo "Docker available: $(docker --version)"
+
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3
+        with:
+          dockerfile: Dockerfile
+          failure-threshold: warning
+
+  # ── Job 2: Build & Test ────────────────────────────────────
+  build-test:
+    name: Build & Test Image
+    runs-on: ubuntu-latest
+    needs: validate
+    if: ${{ github.event_name != 'pull_request' || github.event.action != 'closed' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/wordpress-base
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,prefix=
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64/v8
+
+      - name: List image tags
+        run: |
+          docker images ghcr.io/${{ github.repository_owner }}/wordpress-base
+
+      - name: Validate — PHP version
+        run: |
+          IMAGE_ID=$(docker images --format '{{.ID}}' ghcr.io/${{ github.repository_owner }}/wordpress-base | head -1)
+          docker run --rm "$IMAGE_ID" php -r 'echo "PHP_VERSION=" . PHP_VERSION . "\n";'
+
+      - name: Validate — required extensions
+        run: |
+          IMAGE_ID=$(docker images --format '{{.ID}}' ghcr.io/${{ github.repository_owner }}/wordpress-base | head -1)
+          for ext in pdo mysqli gd exif zip intl imagick redis; do
+            if docker run --rm "$IMAGE_ID" php -m | grep -qi "^${ext}$"; then
+              echo "  ✔  $ext"
+            else
+              echo "  ✖  $ext MISSING"
+              exit 1
+            fi
+          done
+          echo "All required extensions present."
+
+      - name: Validate — Apache starts
+        run: |
+          IMAGE_ID=$(docker images --format '{{.ID}}' ghcr.io/${{ github.repository_owner }}/wordpress-base | head -1)
+          CONTAINER_ID=$(docker run -d --rm \
+            -e WORDPRESS_DB_HOST=mysql \
+            -e WORDPRESS_DB_NAME=wordpress \
+            -e WORDPRESS_DB_USER=wordpress \
+            -e WORDPRESS_DB_PASSWORD=wordpress \
+            "$IMAGE_ID")
+          sleep 5
+          HTTP_STATUS=$(docker exec "$CONTAINER_ID" curl -sf -o /dev/null -w '%{http_code}' http://localhost:80/ 2>/dev/null || echo "000")
+          docker stop "$CONTAINER_ID" &>/dev/null || true
+          if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "301" ] || [ "$HTTP_STATUS" = "302" ]; then
+            echo "  ✔  Apache responding (HTTP $HTTP_STATUS)"
+          else
+            echo "  ✖  Apache did not respond (HTTP $HTTP_STATUS)"
+            exit 1
+          fi
+
+      - name: Validate — healthcheck defined
+        run: |
+          IMAGE_ID=$(docker images --format '{{.ID}}' ghcr.io/${{ github.repository_owner }}/wordpress-base | head -1)
+          docker inspect "$IMAGE_ID" | jq '.[0].Config.Healthcheck' | tee /dev/stderr
+          HAS_CHECK=$(docker inspect "$IMAGE_ID" | jq -r '.[0].Config.Healthcheck.Test[0]')
+          if [ "$HAS_CHECK" = "CMD" ]; then
+            echo "  ✔  HEALTHCHECK is defined"
+          else
+            echo "  ✖  HEALTHCHECK is missing"
+            exit 1
+          fi
+
+  # ── Job 3: Publish (only on tag) ──────────────────────────
+  publish:
+    name: Publish to GHCR
+    runs-on: ubuntu-latest
+    needs: build-test
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/wordpress-base
+          tags: |
+            type=semver,pattern={{version}}
+            type=sha
+
+      - name: Push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64/v8
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: LICENSE CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
