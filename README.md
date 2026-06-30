@@ -127,8 +127,8 @@ AppLabx-Wordpress-Base/
 | `curl` | HTTP requests (core) |
 | `mbstring` | Multibyte string (core) |
 | `xml` | XML parsing (core) |
-| `imagick` *(added)* | Advanced image processing (ImageMagick backend) |
-| `redis` *(added)* | Redis session + object cache backend |
+| `imagick` *(optional)* | Advanced image processing (ImageMagick backend) |
+| `redis` *(optional)* | Redis session + object cache backend |
 
 ### Installed system utilities
 
@@ -140,7 +140,7 @@ AppLabx-Wordpress-Base/
 | `nano` / `vim-tiny` | Debugging inside the container |
 | `less` | Log reading |
 | `mariadb-client` | `wp-cli db` operations, remote DB access |
-| `msmtp` / `msmtp-mta` | Sendmail replacement for `wp_mail()` |
+| `msmtp` | Sendmail replacement for `wp_mail()` |
 
 ### PHP defaults
 
@@ -159,7 +159,7 @@ AppLabx-Wordpress-Base/
 | `date.timezone` | Asia/Singapore | Configurable |
 | `realpath_cache_size` | 4096K | Reduce syscalls |
 | `session.cookie_httponly` | On | XSS session protection |
-| `session.cookie_secure` | On | HTTPS-only sessions |
+| `session.cookie_secure` | *(default Off)* | HTTPS-only — enable via `PHP_SESSION_COOKIE_SECURE=On` in prod |
 
 ### OPcache tuning
 
@@ -170,20 +170,19 @@ AppLabx-Wordpress-Base/
 | `validate_timestamps` | 0 (Off) | Production — no stat() on every request |
 | `revalidate_freq` | 0 | Immediate cache invalidation signal |
 | `interned_strings_buffer` | 32 MB | Repeated string deduplication |
-| `fast_shutdown` | 1 | Lower latency |
-| `jit_buffer_size` | 128 MB | JIT for CPU-intensive code |
-| `jit` | function | JIT mode: function-level tracing |
+| JIT | disabled | WordPress is I/O-bound; JIT provides negligible benefit with segfault risk |
 
 ### Apache hardening
 
-- `ServerTokens Prod` — remove version disclosure
+- `ServerTokens Prod` — remove version disclosure (Debian Apache)
 - `ServerSignature Off` — no version on error pages
-- TRACE blocked at rewrite level
+- TRACE blocked via `<LimitExcept>`
 - `Options -Indexes` — no directory listing
-- `Options -FollowSymLinks` — no symlink traversal
+- `Options +FollowSymLinks` — required for WordPress RewriteRule; symlinks escaping the docroot are still blocked at the server level
 - `KeepAlive On` — persistent connections
 - `mod_deflate` — gzip compression for all text assets
 - `mod_expires` — browser caching for static assets
+- `LimitRequestBody 268435456` — 256 MB Apache-level body limit
 
 ### Security headers (via `mod_headers`)
 
@@ -452,7 +451,7 @@ Also check `client_max_body_size` in any reverse proxy (Nginx/Cloudflare) in fro
 docker inspect --format='{{json .State.Health}}' <container-id>
 ```
 
-The health check hits `/xmlrpc.php` or `/wp-cron.php`. If these are blocked by a reverse proxy, update the `HEALTHCHECK` instruction in the Dockerfile to point to a page you know is accessible.
+The health check hits `/` (root URL). WordPress always responds from `/` — either the front page, the install wizard, or a redirect to wp-admin. If a reverse proxy blocks `/`, update the `HEALTHCHECK` in the Dockerfile to point to a page you know is accessible (e.g. `/wp-login.php`).
 
 ---
 

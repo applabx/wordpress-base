@@ -48,6 +48,16 @@ check_ext() {
     fi
 }
 
+# ── Helper: check WP-CLI availability ──────────────────────
+check_wpcli() {
+    if command -v wp &>/dev/null; then
+        WP_CLI_VER=$(wp --version --allow-root 2>/dev/null | head -1 || echo "unknown")
+        ok "WP-CLI: ${WP_CLI_VER}"
+    else
+        warn "WP-CLI: not found in PATH"
+    fi
+}
+
 # ── Helper: get PHP ini override file path ──────────────────
 get_ini_path() {
     # PHP_INI_DIR is set by the official WordPress image
@@ -103,7 +113,7 @@ else
 fi
 
 # 4. Apache config file present
-APACHE_SECURITY_CONF="/usr/local/apache2/conf/extra/applabx-security.conf"
+APACHE_SECURITY_CONF="/etc/apache2/conf/extra/applabx-security.conf"
 if [ -f "$APACHE_SECURITY_CONF" ]; then
     ok "Apache security config: ${APACHE_SECURITY_CONF}"
 else
@@ -114,7 +124,12 @@ fi
 if php -m | grep -qi "^Zend OPcache$"; then
     OP_STATUS=$(php -r 'echo (ini_get("opcache.enable") ? "enabled" : "disabled");' 2>/dev/null)
     OP_MEM=$(php -r 'echo ini_get("opcache.memory_consumption") . " MB";' 2>/dev/null)
-    ok "OPcache: ${OP_STATUS} (${OP_MEM})"
+    OP_JIT=$(php -r 'echo ini_get("opcache.jit_buffer_size");' 2>/dev/null || echo "0")
+    if [ "$OP_JIT" != "0" ] && [ -n "$OP_JIT" ]; then
+        ok "OPcache: ${OP_STATUS} (${OP_MEM}, JIT: ${OP_JIT})"
+    else
+        ok "OPcache: ${OP_STATUS} (${OP_MEM}, JIT: disabled)"
+    fi
 else
     warn "OPcache: not loaded"
 fi
@@ -123,6 +138,8 @@ fi
 # PHP EXTENSIONS CHECK
 # ============================================================
 section "PHP Extensions"
+check_wpcli
+echo ""
 
 REQUIRED_EXTS=(
     pdo
@@ -191,4 +208,7 @@ echo ""
 #   - wp-config.php generation (if not present)
 #   - WordPress core installation
 #   - Apache daemon (apache2-foreground)
-exec docker-entrypoint.sh "$@"
+#
+# We saved it as docker-entrypoint-origin in the Dockerfile
+# so we can call it without re-invoking ourselves.
+exec /usr/local/bin/docker-entrypoint-origin "$@"

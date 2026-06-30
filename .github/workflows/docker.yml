@@ -123,7 +123,7 @@ jobs:
         run: |
           IMAGE_ID=$(docker images --format '{{.ID}}' ghcr.io/${{ github.repository_owner }}/wordpress-base | head -1)
           CONTAINER_ID=$(docker run -d --rm \
-            -e WORDPRESS_DB_HOST=mysql \
+            -e WORDPRESS_DB_HOST=127.0.0.1 \
             -e WORDPRESS_DB_NAME=wordpress \
             -e WORDPRESS_DB_USER=wordpress \
             -e WORDPRESS_DB_PASSWORD=wordpress \

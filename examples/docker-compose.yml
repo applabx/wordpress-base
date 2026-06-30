@@ -58,7 +58,10 @@ services:
       # Persistent database files
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      # Note: mysqladmin ping uses socket auth by default (auth_socket
+      # on MySQL 8). The -h localhost connects via socket, which bypasses
+      # password auth. No -u/-p flags needed here.
       interval: 10s
       timeout: 5s
       retries: 10

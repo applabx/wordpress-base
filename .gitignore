@@ -1,4 +1,4 @@
-# ── OS ─────────────────────────────────────────────────────
+# ── OS artifacts ───────────────────────────────────────────
 .DS_Store
 Thumbs.db
 *.swp
@@ -6,22 +6,18 @@ Thumbs.db
 *~
 .AppleDouble
 .LSOverride
+Desktop.ini
 
-# ── Build artifacts ─────────────────────────────────────────
+# ── Docker build artifacts ──────────────────────────────────
+.docker/
 *.tar
 *.tar.gz
-*.zip
-!.github/workflows/docker-publish.yml
-
-# ── Docker ─────────────────────────────────────────────────
-.docker/
 
 # ── PHP / Composer ─────────────────────────────────────────
 vendor/
 composer.phar
 composer.lock
 .phpunit.result.cache
-phpunit.xml
 .phpunit.cache/
 
 # ── IDE ───────────────────────────────────────────────────
@@ -39,21 +35,18 @@ phpunit.xml
 *.crt
 credentials.json
 secrets.json
+id_rsa*
+id_ed25519*
 
-# ── Local overrides (examples) ────────────────────────────
-# Allow mounting overrides without committing them
+# ── Local overrides ─────────────────────────────────────────
+# Mount your custom php.ini / httpd.conf overrides here
+# without accidentally committing them.
 # overrides/
-# overrides.sh
 
-# ── Documentation build ────────────────────────────────────
+# ── Documentation build ─────────────────────────────────────
 _site/
 .sass-cache/
 *.log
-
-# ── Git ────────────────────────────────────────────────────
-# Keep the workflow files; ignore everything else in .github
-.github/*.yml
-!.github/workflows/
 
 # ── Misc ───────────────────────────────────────────────────
 *.bak
